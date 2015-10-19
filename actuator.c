@@ -51,6 +51,8 @@ static int flag = 0;
 char done[8] = {0,0,0,0,0,0,0,0};
 static int timeout_cnt = 0;
 int k = 0;
+int unicast_counter = 0;
+
 /* This is the structure of broadcast messages. */
 struct broadcast_message {
   uint8_t seqno;
@@ -151,7 +153,7 @@ recv_uc(struct unicast_conn *c, const linkaddr_t *from)
 	//msg->type = UNICAST_TYPE_PONG;
 	//packetbuf_copyfrom(msg, sizeof(struct unicast_message));
 	/* Send it back to where it came from. */
-	//unicast_send(c, from);
+	//_unicast(c, from);
   }
   if ((flag == 1) && (strcmp(receive_msg,address)==0)){
 	  /* The packetbuf_dataptr() returns a pointer to the first data byte
@@ -211,6 +213,11 @@ recv_uc(struct unicast_conn *c, const linkaddr_t *from)
   }
   receive_msg = "null";
 }
+static void _unicast(struct unicast_conn *c, const linkaddr_t *receiver)
+{
+	unicast_send(c, receiver);
+	printf("unicast_counter: %d\n", ++unicast_counter);
+}
 static const struct broadcast_callbacks broadcast_call = {};
 static struct broadcast_conn broadcast;
 static const struct unicast_callbacks unicast_callbacks = {recv_uc};
@@ -263,7 +270,7 @@ PROCESS_THREAD(example_broadcast_process, ev, data)
 				  msg = "address_ack";
 				  printf("sending unicast to %d.%d with message %s\n", n->addr.u8[0], n->addr.u8[1], msg);
 				  packetbuf_copyfrom(msg, (strlen(msg)+1));
-				  unicast_send(&unicast, &n->addr);
+				  _unicast(&unicast, &n->addr);
         	  }
         	  printf("%d, %d\n",k,nr_neighbors);
         }
@@ -290,10 +297,16 @@ PROCESS_THREAD(example_broadcast_process, ev, data)
         	  printf("sending unicast to %d.%d with message %s\n", n->addr.u8[0], n->addr.u8[1], msg);
 
           	  packetbuf_copyfrom(msg, (strlen(msg)+1));
-          	  unicast_send(&unicast, &n->addr);
-
+          	  _unicast(&unicast, &n->addr);
+        }
+        if(k == nr_neighbors)
+        {
+        	flag = 4;
+        	printf("schedule sent");
         }
     	break;
+    case 4:
+    break;
     default:
     	break;
     }

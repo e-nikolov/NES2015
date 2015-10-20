@@ -136,4 +136,7 @@ obj_z1/
 */symbols.h
 /*.map
 
+
+symbols.c
+symbols.h
 *.map

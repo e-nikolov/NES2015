@@ -40,14 +40,37 @@
 #include "contiki.h"
 #include "dev/button-sensor.h" 
 #include "dev/light-sensor.h" 
-#include "dev/leds.h" 
+#include "dev/leds.h"
+#include "mycommon.h"
 
 #include <stdio.h> /* For printf() */
 static int counter = 0;
 static int long long  t = 0;
+static int x = 0;
+
+/*---------------------------------------------------------------------------*/
+PROCESS(hello_world_process2, "Hello world process2");
+/*---------------------------------------------------------------------------*/
+PROCESS_THREAD(hello_world_process2, ev, data)
+{
+
+  static struct etimer et;
+  PROCESS_BEGIN();
+
+  printf("Process2\n");
+
+
+  SLEEP_THREAD(5000);
+
+
+  printf("Process2 ended\n");
+  x = 1;
+
+  PROCESS_END();
+}
 /*---------------------------------------------------------------------------*/
 PROCESS(hello_world_process, "Hello world process");
-AUTOSTART_PROCESSES(&hello_world_process);
+AUTOSTART_PROCESSES(&hello_world_process, &hello_world_process2);
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(hello_world_process, ev, data)
 {
@@ -57,11 +80,16 @@ PROCESS_THREAD(hello_world_process, ev, data)
   SENSORS_ACTIVATE(light_sensor); // activate sensor  
   printf("Hello, world\n");
 
+  SLEEP_THREAD(2000);
+
+  printf("other timer\n");
+
+  PROCESS_WAIT_UNTIL(x == 1);
+  printf("Bye, world\n");
 
   printf("%lld\n", t = clock_time());
   while(1)
   {
-
     PROCESS_WAIT_EVENT_UNTIL(ev == sensors_event && data == &button_sensor); // wait for button press event
 
 	printf("time: %lld\n", ((clock_time() - t)*1000)/CLOCK_SECOND);

@@ -44,7 +44,7 @@ AUTOSTART_PROCESSES(&sensor_cast_process);
  * create broadcast_msg structure (unneccesary?)
  * create a sender_history list to detect duplicate messages
  */
-struct runicast_msg
+struct runicast_message
 {
 	uint8_t type;
 	int16_t data;
@@ -90,7 +90,7 @@ recv_broadcast(struct broadcast_conn *c, const linkaddr_t *from)
 {
 	if(daddy_addr == NULL)
 	{
-		linkaddr_copy(&daddy_addr, from);
+		linkaddr_copy(daddy_addr, from);
 	}
 
 	broadcast_close(&broadcast);
@@ -136,7 +136,7 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 	printf("runicast message received from %d.%d, seqno %d\n",
 			from->u8[0], from->u8[1], seqno);
 
-	struct runicast_msg *received_msg = packetbuf_dataptr();
+	struct runicast_message *received_msg = packetbuf_dataptr();
 
 	if (received_msg->type == RUNICAST_TYPE_SCHEDULE)
 	{
@@ -144,13 +144,14 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 	}
 	else
 	{
-		printf("I received a runicast message that was not for me!\n")
+		printf("I received a runicast message that was not for me!\n");
 	}
 }
 
 static void
 sent_runicast(struct runicast_conn *c, const linkaddr_t *to, uint8_t retransmissions)
 {
+
 	printf("runicast message sent to %d.%d, retransmissions %d\n",
 			to->u8[0], to->u8[1], retransmissions);
 }
@@ -179,7 +180,7 @@ PROCESS_THREAD(sensor_cast_process, ev, data)
 
 	broadcast_open(&broadcast, 129, &broadcast_callbacks);
 
-	PROCESS_WAIT_UNTILL(daddy_addr != NULL);
+	PROCESS_WAIT_UNTIL(daddy_addr != NULL);
 
 	runicast_open(&runicast, 129, &runicast_callbacks);
 
@@ -195,7 +196,7 @@ PROCESS_THREAD(sensor_cast_process, ev, data)
 
 		PROCESS_WAIT_UNTIL(etimer_expired(&et));
 
-		printf("sending runicast to %d.%d\n", daddy_addr.u8[0], daddy_addr.u8[1]);
+		printf("sending runicast to %d.%d\n", daddy_addr->u8[0], daddy_addr->u8[1]);
 
 		msg.type = RUNICAST_TYPE_TEMP;
 		msg.data = random_rand() % 10;

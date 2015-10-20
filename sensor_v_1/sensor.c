@@ -70,7 +70,7 @@ struct history_entry
 	uint8_t seq;
 };
 
-linkaddr_t daddy_addr = NULL;
+linkaddr_t *daddy_addr = NULL;
 
 uint16_t time_delay;
 
@@ -78,6 +78,8 @@ MEMB(history_mem, struct history_entry, NUM_HISTORY_ENTRIES);
 LIST(history_table);
 
 /*---------------------------------------------------------------------------*/
+static struct runicast_conn runicast;
+static struct broadcast_conn broadcast;
 
 /*
  * now we define what to do on receiving, sending or timing out a runicast_msg or broadcast
@@ -88,8 +90,10 @@ recv_broadcast(struct broadcast_conn *c, const linkaddr_t *from)
 {
 	if(daddy_addr == NULL)
 	{
-		linkaddr_copy(daddy_addr, from);
+		linkaddr_copy(&daddy_addr, from);
 	}
+
+	broadcast_close(&broadcast);
 }
 
 static void
@@ -161,10 +165,9 @@ timedout_runicast(struct runicast_conn *c, const linkaddr_t *to, uint8_t retrans
 static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
 							     	 	 	 	 	 	 	 sent_runicast,
 															 timedout_runicast};
-static struct runicast_conn runicast;
 
 static const struct broadcast_callbacks broadcast_callbacks = {recv_broadcast};
-static struct broadcast_conn broadcast;
+
 /*-----------------------------------------------------------------------------------*/
 
 
@@ -174,39 +177,33 @@ PROCESS_THREAD(sensor_cast_process, ev, data)
 	PROCESS_EXITHANDLER(runicast_close(&runicast);)
 	PROCESS_BEGIN();
 
-	while(daddy_addr == NULL)
+	broadcast_open(&broadcast, 129, &broadcast_callbacks);
+
+	PROCESS_WAIT_UNTILL(daddy_addr != NULL);
+
+	runicast_open(&runicast, 129, &runicast_callbacks);
+
+	time_delay = 2 * (random_rand() % 8);
+
+	while(1)
 	{
-		broadcast_open(&broadcast, 129, &broadcast_callbacks);
+
+		static struct etimer et;
+		struct runicast_message msg;
+
+		etimer_set(&et, CLOCK_SECOND * time_delay);
+
+		PROCESS_WAIT_UNTIL(etimer_expired(&et));
+
+		printf("sending runicast to %d.%d\n", daddy_addr.u8[0], daddy_addr.u8[1]);
+
+		msg.type = RUNICAST_TYPE_TEMP;
+		msg.data = random_rand() % 10;
+
+		packetbuf_copyfrom(&msg, sizeof(msg));
+		runicast_send(&runicast, &daddy_addr, MAX_RETRANSMISSIONS);
 	}
-	broadcast_close(&broadcast);
 
-	while(daddy_addr != NULL)
-	{
-		runicast_open(&runicast, 129, &runicast_callbacks);
-
-		time_delay = 2 * (random_rand() % 8);
-
-		while(1)
-		{
-
-		    static struct etimer et;
-		    struct runicast_message msg;
-
-		    etimer_set(&et, CLOCK_SECOND * time_delay);
-
-		    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-
-		    printf("sending runicast to %d.%d\n", daddy_addr.u8[0], daddy_addr.u8[1]);
-
-		    msg.type = RUNICAST_TYPE_TEMP;
-		    msg.data = random_rand() % 10;
-
-		    packetbuf_copyfrom(&msg, sizeof(msg));
-		    runicast_send(&runicast, &daddy_addr);
-		}
-
-
-	}
 
 	PROCESS_END();
 }

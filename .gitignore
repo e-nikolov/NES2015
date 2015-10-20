@@ -132,3 +132,5 @@ obj_native/
 obj_sky/
 obj_z1/
 
+*/symbols.c
+*/symbols.h

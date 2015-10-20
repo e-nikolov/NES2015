@@ -47,7 +47,8 @@
 
 #include <stdio.h>
 static int flag = 0;
-static int nr_tries = 1;
+static int check = 0;
+static int nr_tries = 0;
 /* This is the structure of broadcast messages. */
 struct broadcast_message {
   uint8_t seqno;
@@ -64,6 +65,8 @@ enum {
   UNICAST_TYPE_PONG,
   UNICAST_TYPE_ACK
 };
+// integer to check for timeouts
+
 
 /* This structure holds information about neighbors. */
 struct neighbor {
@@ -103,12 +106,16 @@ LIST(neighbors_list);
 
 /* These hold the broadcast and unicast structures, respectively. */
 static struct broadcast_conn broadcast;
-static struct unicast_conn unicast;
+static struct runicast_conn runicast;
 
 /* These two defines are used for computing the moving average for the
    broadcast sequence number gaps. */
 #define SEQNO_EWMA_UNITY 0x100
 #define SEQNO_EWMA_ALPHA 0x040
+
+/*runicast vallues */
+#define MAX_RETRANSMISSIONS 4
+#define NUM_HISTORY_ENTRIES 4
 /*---------------------------------------------------------------------------*/
 PROCESS(example_broadcast_process, "Broadcast example");
 AUTOSTART_PROCESSES(&example_broadcast_process);
@@ -166,60 +173,86 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
 
 	    /* Place the neighbor on the neighbor list. */
 	    list_add(neighbors_list, n);
-	    printf("actuator added to neighbor list\n");
 	  }
-
-	  /* We can now fill in the fields in our neighbor entry. */
-	  n->last_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
-	  n->last_lqi = packetbuf_attr(PACKETBUF_ATTR_LINK_QUALITY);
-
-	  /* Compute the average sequence number gap we have seen from this neighbor. */
-	  seqno_gap = m->seqno - n->last_seqno;
-	  n->avg_seqno_gap = (((uint32_t)seqno_gap * SEQNO_EWMA_UNITY) *
-	                      SEQNO_EWMA_ALPHA) / SEQNO_EWMA_UNITY +
-	                      ((uint32_t)n->avg_seqno_gap * (SEQNO_EWMA_UNITY -
-	                                                     SEQNO_EWMA_ALPHA)) /
-	    SEQNO_EWMA_UNITY;
-
-	  /* Remember last seqno we heard. */
-	  n->last_seqno = m->seqno;
 	  flag = 2;
+	  printf("flag 2 is triggered \n");
   }
   rcv_bfr = "null";
 }
-/* This function is called for every incoming unicast packet. */
+
+/* history */
+struct history_entry {
+  struct history_entry *next;
+  linkaddr_t addr;
+  uint8_t seq;
+};
+LIST(history_table);
+MEMB(history_mem, struct history_entry, NUM_HISTORY_ENTRIES);
+/*---------------------------------------------------------------------------*/
 static void
-recv_uc(struct unicast_conn *c, const linkaddr_t *from)
+recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 {
+  /* OPTIONAL: Sender history */
+  struct history_entry *e = NULL;
+  for(e = list_head(history_table); e != NULL; e = e->next) {
+    if(linkaddr_cmp(&e->addr, from)) {
+      break;
+    }
+  }
+  if(e == NULL) {
+    /* Create new history entry */
+    e = memb_alloc(&history_mem);
+    if(e == NULL) {
+      e = list_chop(history_table); /* Remove oldest at full history */
+    }
+    linkaddr_copy(&e->addr, from);
+    e->seq = seqno;
+    list_push(history_table, e);
+  } else {
+    /* Detect duplicate callback */
+    if(e->seq == seqno) {
+      printf("runicast message received from %d.%d, seqno %d (DUPLICATE)\n",
+	     from->u8[0], from->u8[1], seqno);
+      return;
+    }
+    /* Update existing history entry */
+    e->seq = seqno;
+  }
   char * receive_msg;
-  char * ack = "address_ack";
-  struct unicast_message *msg;
-  /* Grab the pointer to the incoming data. */
+    struct runicast_message *msg;
+    /* Grab the pointer to the incoming data. */
+    receive_msg = packetbuf_dataptr();
+
   receive_msg = packetbuf_dataptr();
-  printf("actuator unicast received with message %s\n",receive_msg);
+  printf("runicast received with message %s\n",receive_msg);
   /* We have two message types, UNICAST_TYPE_PING and
 	 UNICAST_TYPE_PONG. If we receive a UNICAST_TYPE_PING message, we
 	 print out a message and return a UNICAST_TYPE_PONG. */
-  switch(flag)
-  {
- 	  case 2:
- 		  if(strcmp(receive_msg,ack)==0) {
- 			printf("ack received from actuator, waiting for schedule\n");
- 			flag = 3;
- 			//msg->type = UNICAST_TYPE_PONG;
- 			//packetbuf_copyfrom(msg, sizeof(struct unicast_message));
- 			/* Send it back to where it came from. */
- 			//unicast_send(c, from);
- 		  }
-	  break;
- 	  default:
-      break;
-  }
+
   receive_msg = "null";
+
+
 }
 static const struct broadcast_callbacks broadcast_call = {broadcast_recv};
 static struct broadcast_conn broadcast;
-static const struct unicast_callbacks unicast_callbacks = {recv_uc};
+
+// runicast shizzle
+static void
+sent_runicast(struct runicast_conn *c, const linkaddr_t *to, uint8_t retransmissions)
+{
+  printf("runicast message sent to %d.%d, retransmissions %d\n",
+	 to->u8[0], to->u8[1], retransmissions);
+}
+static void
+timedout_runicast(struct runicast_conn *c, const linkaddr_t *to, uint8_t retransmissions)
+{
+  printf("runicast message timed out when sending to %d.%d, retransmissions %d\n",
+	 to->u8[0], to->u8[1], retransmissions);
+}
+static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
+							     sent_runicast,
+							     timedout_runicast};
+static struct runicast_conn runicast;
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(example_broadcast_process, ev, data)
 {
@@ -236,43 +269,34 @@ PROCESS_THREAD(example_broadcast_process, ev, data)
   broadcast_open(&broadcast, 129, &broadcast_call);
 
 
-  while(1) {
-	  //etimer_set(&et, CLOCK_SECOND * 1 + random_rand() % CLOCK_SECOND*8);
-	  etimer_set(&et, CLOCK_SECOND * 1);
+  while(flag != 3) {
+	  etimer_set(&et,  CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
+
 	  PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 	  switch(flag)
 	  {
 	  case 0:
 		  break;
 	  case 2:
-		  broadcast_close(&broadcast);
 		  //broadcast_close(&broadcast);
-		  unicast_open(&unicast, 146, &unicast_callbacks);
+		  runicast_open(&runicast, 146, &runicast_callbacks);
 	      randneighbor = random_rand() % list_length(neighbors_list);
           n = list_head(neighbors_list);
           //for(i = 0; i < randneighbor; i++) {
           //  n = list_item_next(n);
           //}          nr_tries++;
 
-          printf("sending unicast to %d.%d with message %s, nr. tries: %d\n", n->addr.u8[0], n->addr.u8[1],message, nr_tries);
+          printf("sending runicast to %d.%d with message %s\n", n->addr.u8[0], n->addr.u8[1],message);
 
-          nr_tries++;
-		  if(nr_tries>9)
-		  {
-			  flag = 0;
-			  printf("tries overflow!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
-		  }
           //msg.type = UNICAST_TYPE_ACK;
           packetbuf_copyfrom(message, (strlen(message)+1));
-          unicast_send(&unicast, &n->addr);
+          runicast_send(&runicast, &n->addr, MAX_RETRANSMISSIONS);
+
 
 /*          packetbuf_copyfrom("address", 8);
 		  broadcast_send(&broadcast);
 		  printf("broadcast to actuator sent\n");*/
-
-	  break;
-	  case 3:
-		  flag = 3;
+          flag = 3;
 	  break;
 	  default:
 		  flag = 0;

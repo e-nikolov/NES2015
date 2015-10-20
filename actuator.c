@@ -247,6 +247,13 @@ PROCESS_THREAD(initialization_process, ev, data)
   broadcast_open(&broadcast, 129, &broadcast_call);
 
   while(1) {
+	if(check == 1)
+	{
+		printf("unresponsive neighbor deleted\n");
+		list_remove(neighbors_list, n);
+		nr_neighbors--;
+		check = 0;
+	}
     /* Delay 2-4 seconds */
 	if (flag == 3)
 		etimer_set(&et, CLOCK_SECOND * 60);
@@ -293,7 +300,6 @@ PROCESS_THREAD(initialization_process, ev, data)
 
 			  packetbuf_copyfrom(msg, (strlen(msg)+1));
 			  runicast_send(&runicast, &n->addr, MAX_RETRANSMISSIONS);
-			  if(check == 1){printf("blablablabla \n"); check = 0;}
 		}
 		if(k == nr_neighbors)
 		{
@@ -312,32 +318,6 @@ PROCESS_THREAD(initialization_process, ev, data)
     break;
     }
   }
-  // out of init loop, into the schedule loop
-  // schedule loop has to be divided into the amount of neighbours + 1. there is a maximum of 16 neighbours so we take a total period of 170 sec
-  // in this way, each communication has 10 sec if there is a full neighbours list
-
-	    /*etimer_set(&et, CLOCK_SECOND * 10);
-
-	    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-	    // proces node n
-	    n = list_head(neighbors_list);
-	    for(j = 0; j < k; j=j+1)
-	    {
-	    	n = list_item_next(n);
-	    }
-	    if(k < nr_neighbors)
-	    {
-  	  	    msg = "data_send_req";
-	    	printf("runicast data request %s\n", n->addr.u8[0], n->addr.u8[1], msg);
-    	    packetbuf_copyfrom(msg, (strlen(msg)+1));
-    	    runicast_send(&runicast, &n->addr, MAX_RETRANSMISSIONS);
-		    if(check == 1){printf("blablablabla \n"); check = 0;}
-	    }
-	    printf("k = %d\n",k);
-	    k++;
-	    if(k == 17){k=0;}*/
-
-
   PROCESS_END();
 }
 /*---------------------------------------------------------------------------*/

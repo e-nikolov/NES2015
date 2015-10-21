@@ -1,191 +1,223 @@
+/*
+ * This file contains code for a sensor node that, upon initialisation, waits for a
+ * broadcast from a parent, saves the adress (rime) of this parent in it's parent_list
+ * (containing just 1 parent!) and then sends data to this parent using runicast.
+ *
+ * Further it contains a counter for the amount of failed runicast, if this reaches
+ * a certain threshold it shuts down.
+ */
 
-#include "contiki.h"
-#include "net/rime/rime.h"
-#include "lib/list.h"
-#include "lib/memb.h"
-#include "lib/random.h"
-#include "dev/button-sensor.h"
-#include "dev/leds.h"
+/*
+ * first, include the neccesary packages.
+ */
 
 #include <stdio.h>
 
-#define CHANNEL 135
+#include "contiki.h"
+#include "../mycommon.h"
+#include "net/rime/rime.h"
+
+#include "lib/list.h"
+#include "lib/memb.h"
+
+#include "dev/leds.h"
+
+/*
+ * Then we define the values needed for runicast to be reliable ;), wich are
+ * the amount of allowable rettransmissions before accepting failure, and
+ * the amount of message id's in the history list, wich should be enough
+ * to contain at least one message from each parent node (so, one :D)
+ */
+
+#define MAX_RETRANSMISSIONS 4
+#define NUM_HISTORY_ENTRIES 2
+
+/*---------------------------------------------------------------------------*/
 
 
-struct example_neighbor {
-  struct example_neighbor *next;
-  linkaddr_t addr;
-  struct ctimer ctimer;
+PROCESS(sensor_cast_process, "sensor cast");
+
+AUTOSTART_PROCESSES(&sensor_cast_process);
+/*---------------------------------------------------------------------------*/
+
+/*
+ * create runicast_msg structure
+ * create broadcast_msg structure (unneccesary?)
+ * create a sender_history list to detect duplicate messages
+ */
+struct runicast_message
+{
+	uint8_t type;
+	int16_t data;
+	int16_t actuator_id;
+};
+struct broadcast
+{
+	uint8_t type;
+	int16_t data;
+};
+/*
+struct broadcast_msg
+{
+	uint8_t type;
+};
+*/
+enum
+{
+	BROADCAST_TYPE_DISCOVERY,
+	RUNICAST_TYPE_SCHEDULE,
+	RUNICAST_TYPE_TEMP,
+	RUNICAST_TYPE_HUMID
 };
 
-#define NEIGHBOR_TIMEOUT 60 * CLOCK_SECOND
-#define MAX_NEIGHBORS 16
-LIST(neighbor_table);
-MEMB(neighbor_mem, struct example_neighbor, MAX_NEIGHBORS);
+struct history_entry
+{
+	struct history_entry *next;
+	linkaddr_t addr;
+	uint8_t seq;
+};
+
+linkaddr_t *daddy_addr = NULL;
+
+uint16_t time_delay;
+
+MEMB(history_mem, struct history_entry, NUM_HISTORY_ENTRIES);
+LIST(history_table);
+
 /*---------------------------------------------------------------------------*/
-PROCESS(example_multihop_process, "multihop example");
-AUTOSTART_PROCESSES(&example_multihop_process);
-/*---------------------------------------------------------------------------*/
+static struct runicast_conn runicast;
+static struct broadcast_conn broadcast;
+
 /*
- * This function is called by the ctimer present in each neighbor
- * table entry. The function removes the neighbor from the table
- * because it has become too old.
+ * now we define what to do on receiving, sending or timing out a runicast_msg or broadcast
  */
+
 static void
-remove_neighbor(void *n)
+recv_broadcast(struct broadcast_conn *c, const linkaddr_t *from)
 {
-  struct example_neighbor *e = n;
-
-  list_remove(neighbor_table, e);
-  memb_free(&neighbor_mem, e);
+	// do nothing for now
 }
-/*---------------------------------------------------------------------------*/
-/*
- * This function is called when an incoming announcement arrives. The
- * function checks the neighbor table to see if the neighbor is
- * already present in the list. If the neighbor is not present in the
- * list, a new neighbor table entry is allocated and is added to the
- * neighbor table.
- */
+
 static void
-received_announcement(struct announcement *a,
-                      const linkaddr_t *from,
-		      uint16_t id, uint16_t value)
+recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 {
-  struct example_neighbor *e;
+	struct history_entry *e = NULL;
+	int16_t data, id;
 
-  /*  printf("Got announcement from %d.%d, id %d, value %d\n",
-      from->u8[0], from->u8[1], id, value);*/
+	for(e = list_head(history_table); e != NULL; e = e->next)
+	{
+		if(linkaddr_cmp(&e->addr, from))
+		{
+			break;
+		}
+	}
 
-  /* We received an announcement from a neighbor so we need to update
-     the neighbor list, or add a new entry to the table. */
-  for(e = list_head(neighbor_table); e != NULL; e = e->next) {
-    if(linkaddr_cmp(from, &e->addr)) {
-      /* Our neighbor was found, so we update the timeout. */
-      ctimer_set(&e->ctimer, NEIGHBOR_TIMEOUT, remove_neighbor, e);
-      return;
-    }
-  }
+	if(e == NULL)
+	{
+		/* Create new history entry */
+		e = memb_alloc(&history_mem);
+		if(e == NULL)
+		{
+			e = list_chop(history_table); /* Remove oldest at full history */
+		}
+		linkaddr_copy(&e->addr, from);
+		e->seq = seqno;
+		list_push(history_table, e);
+	}
+	else
+	{
+		/* Detect duplicate callback */
+		if(e->seq == seqno)
+		{
+			printf("runicast message received from %d.%d, seqno %d (DUPLICATE)\n",
+					from->u8[0], from->u8[1], seqno);
+		}
+		/* Update existing history entry */
+		e->seq = seqno;
+	}
 
-  /* The neighbor was not found in the list, so we add a new entry by
-     allocating memory from the neighbor_mem pool, fill in the
-     necessary fields, and add it to the list. */
-  e = memb_alloc(&neighbor_mem);
-  if(e != NULL) {
-    linkaddr_copy(&e->addr, from);
-    list_add(neighbor_table, e);
-    ctimer_set(&e->ctimer, NEIGHBOR_TIMEOUT, remove_neighbor, e);
-  }
+	printf("Basestation: runicast message received from %d.%d, seqno %d\n",
+			from->u8[0], from->u8[1], seqno);
+
+	struct runicast_message *received_msg = packetbuf_dataptr();
+
+	if (received_msg->type == RUNICAST_TYPE_TEMP)
+	{
+		time_delay = received_msg->data;
+
+		printf("Temperature from actuator %d has value %d",id,data)
+	}
+	else if(received_msg->type == RUNICAST_TYPE_HUMID)
+	{
+		time_delay = received_msg->data;
+		printf("Humid from actuator %d has value %d",id,data)
+	}
+	else
+	{
+		printf("I received a runicast message that was not for me!\n");
+	}
 }
-static struct announcement example_announcement;
-/*---------------------------------------------------------------------------*/
-/*
- * This function is called at the final recepient of the message.
- */
+
 static void
-recv(struct multihop_conn *c, const linkaddr_t *sender,
-     const linkaddr_t *prevhop,
-     uint8_t hops)
+sent_runicast(struct runicast_conn *c, const linkaddr_t *to, uint8_t retransmissions)
 {
-  printf("multihop message received '%s'\n", (char *)packetbuf_dataptr());
+
+	printf("runicast message sent to %d.%d, retransmissions %d\n",
+			to->u8[0], to->u8[1], retransmissions);
 }
-/*
- * This function is called to forward a packet. The function picks a
- * random neighbor from the neighbor list and returns its address. The
- * multihop layer sends the packet to this address. If no neighbor is
- * found, the function returns NULL to signal to the multihop layer
- * that the packet should be dropped.
- */
-static linkaddr_t *
-forward(struct multihop_conn *c,
-	const linkaddr_t *originator, const linkaddr_t *dest,
-	const linkaddr_t *prevhop, uint8_t hops)
+
+static void
+timedout_runicast(struct runicast_conn *c, const linkaddr_t *to, uint8_t retransmissions)
 {
-  /* Find a random neighbor to send to. */
-  int num, i;
-  struct example_neighbor *n;
-  struct example_neighbor *temp = NULL;
-
-  if(list_length(neighbor_table) > 0) {
-    num = random_rand() % list_length(neighbor_table);
-    i = 0;
-    for(n = list_head(neighbor_table); n != NULL ; n = n->next) {
-    	if(i==num){
-    		temp = n;
-    	}
-    	if(linkaddr_cmp(&(n->addr),dest)){
-    		temp = n;
-    		break;
-    	}
-      ++i;
-    }
-    n = temp;
-    if(n != NULL) {
-      printf("%d.%d: Forwarding packet to %d.%d (%d in list), hops %d\n",
-	     linkaddr_node_addr.u8[0], linkaddr_node_addr.u8[1],
-	     n->addr.u8[0], n->addr.u8[1], num,
-	     packetbuf_attr(PACKETBUF_ATTR_HOPS));
-      return &n->addr;
-    }
-  }
-  printf("%d.%d: did not find a neighbor to foward to\n",
-	 linkaddr_node_addr.u8[0], linkaddr_node_addr.u8[1]);
-  return NULL;
+	printf("runicast message timed out when sending to %d.%d, retransmissions %d\n",
+			to->u8[0], to->u8[1], retransmissions);
 }
-static const struct multihop_callbacks multihop_call = {recv, forward};
-static struct multihop_conn multihop;
-/*---------------------------------------------------------------------------*/
-PROCESS_THREAD(example_multihop_process, ev, data)
+
+static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
+							     	 	 	 	 	 	 	 sent_runicast,
+															 timedout_runicast};
+
+static const struct broadcast_callbacks broadcast_callbacks = {recv_broadcast};
+/*-----------------------------------------------------------------------------------*/
+
+
+
+PROCESS_THREAD(sensor_cast_process, ev, data)
 {
-  PROCESS_EXITHANDLER(multihop_close(&multihop);)
+	PROCESS_EXITHANDLER(runicast_close(&runicast);)
+	PROCESS_BEGIN();
 
-  PROCESS_BEGIN();
+	broadcast_open(&broadcast, 55, &broadcast_callbacks);
 
-  /* Initialize the memory for the neighbor table entries. */
-  memb_init(&neighbor_mem);
+	time_delay = 2 * (random_rand() % 8);
 
-  /* Initialize the list used for the neighbor table. */
-  list_init(neighbor_table);
+	//while(1)
+	//{
+		static struct etimer et, dt;
+		struct runicast_message ru_msg;
+		struct broadcast br_msg;
 
-  /* Open a multihop connection on Rime channel CHANNEL. */
-  multihop_open(&multihop, CHANNEL, &multihop_call);
+		etimer_set(&et, CLOCK_SECOND * 1);
 
-  /* Register an announcement with the same announcement ID as the
-     Rime channel we use to open the multihop connection above. */
-  announcement_register(&example_announcement,
-			CHANNEL,
-			received_announcement);
+		PROCESS_WAIT_UNTIL(etimer_expired(&et));
+		printf("basestation: broadcast to neighbors\n");
+		br_msg.type = BROADCAST_TYPE_DISCOVERY;
+		br_msg.data = 1;
+		packetbuf_copyfrom(&br_msg, sizeof(br_msg));
+		broadcast_send(&broadcast);
 
-  /* Set a dummy value to start sending out announcments. */
-  announcement_set_value(&example_announcement, 0);
+		runicast_open(&runicast, 9, &runicast_callbacks);
+		while(1)
+		{
+			etimer_set(&dt, CLOCK_SECOND*1);
+			PROCESS_WAIT_UNTIL(etimer_expired(&dt));
+		}
 
-  /* Activate the button sensor. We use the button to drive traffic -
-     when the button is pressed, a packet is sent. */
-  SENSORS_ACTIVATE(button_sensor);
+	//}
 
-  /* Loop forever, send a packet when the button is pressed. */
-  while(1) {
-    linkaddr_t to;
 
-    /* Wait until we get a sensor event with the button sensor as data. */
-    PROCESS_WAIT_EVENT_UNTIL(ev == sensors_event &&
-			     data == &button_sensor);
-
-    /* Copy the "Hello" to the packet buffer. */
-    packetbuf_copyfrom("Hello", 6);
-
-    /* Set the Rime address of the final receiver of the packet to
-       1.0. This is a value that happens to work nicely in a Cooja
-       simulation (because the default simulation setup creates one
-       node with address 1.0). */
-    to.u8[0] = 1;
-    to.u8[1] = 0;
-
-    /* Send the packet. */
-    multihop_send(&multihop, &to);
-
-  }
-
-  PROCESS_END();
+	PROCESS_END();
 }
-/*---------------------------------------------------------------------------*/
+
+
+

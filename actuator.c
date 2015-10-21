@@ -100,12 +100,6 @@ LIST(neighbors_list);
 /* These hold the broadcast and unicast structures, respectively. */
 static struct broadcast_conn broadcast;
 
-
-/* These two defines are used for computing the moving average for the
-   broadcast sequence number gaps. */
-#define SEQNO_EWMA_UNITY 0x100
-#define SEQNO_EWMA_ALPHA 0x040
-
 #define MAX_RETRANSMISSIONS 4
 #define NUM_HISTORY_ENTRIES 4
 /*---------------------------------------------------------------------------*/

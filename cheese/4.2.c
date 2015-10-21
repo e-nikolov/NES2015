@@ -115,7 +115,9 @@ forward(struct multihop_conn *c,
     	}
     	if(linkaddr_cmp(&(n->addr),dest)){
     		temp = n;
+    		printf("ID 1.0 found\n");
     		break;
+
     	}
       ++i;
     }

@@ -7,7 +7,6 @@
 
 #ifndef COMMON_H_
 #define COMMON_H_
-#endif /* COMMON_H_ */
 
 #define SLEEP_THREAD(time) \
 	{ \
@@ -15,4 +14,9 @@
 		etimer_set(&SLEEP_TIMER_IN_SLEEP_MACRO,  (time * CLOCK_SECOND) / 1000);  \
 		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&SLEEP_TIMER_IN_SLEEP_MACRO));\
 	};
+
+
+#define NEW_TIMER_RECEIVED_EVENT        0x01
+
+#endif /* COMMON_H_ */
 

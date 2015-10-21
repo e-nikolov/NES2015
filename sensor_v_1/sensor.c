@@ -71,7 +71,7 @@ struct history_entry
 };
 
 linkaddr_t *daddy_addr;
-int flag = 0;
+int schedule_set = 0;
 
 uint16_t time_delay = -1;
 
@@ -127,9 +127,9 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 
 	if (received_msg->type == RUNICAST_TYPE_SCHEDULE)
 	{
+		schedule_set = 1;
 		time_delay = received_msg->data;
-		process_exit(&data_sender_process);
-		process_start(&data_sender_process, NULL);
+		process_post(&data_sender_process, NEW_TIMER_RECEIVED_EVENT, time_delay);
 	}
 	else
 	{
@@ -165,16 +165,26 @@ PROCESS_THREAD(data_sender_process, ev, data)
 	PROCESS_EXITHANDLER(runicast_close(&runicast);)
 	PROCESS_BEGIN();
 
-	runicast_open(&runicast, 129, &runicast_callbacks);
 
-	if(time_delay == -1) {
-		time_delay = 2 * (random_rand() % 8);
-	}
+	runicast_open(&runicast, 129, &runicast_callbacks);
 
 	while(1)
 	{
-		SLEEP_THREAD(time_delay);
-		PROCESS_WAIT_EVENT_UNTIL(timer || );
+		if(!schedule_set) {
+			// TODO select a suitable random time;
+			time_delay = 2 * (random_rand() % 8);
+		}
+
+		static struct etimer et;
+		etimer_set(&et,  (time_delay * CLOCK_SECOND) / 1000);
+
+		// Wait either for a timeout or for an event from the runicast receiver.
+		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et) || ev == NEW_TIMER_RECEIVED_EVENT);
+
+		if(ev == PROCESS_EVENT_CONTINUE) {
+			// time_delay = data;
+			SLEEP_THREAD(time_delay);
+		}
 
 		printf("sensor_cast_process: main loop\n");
 		struct runicast_message msg;

@@ -14,6 +14,7 @@
 #include <stdio.h>
 
 #include "contiki.h"
+#include "../mycommon.h"
 #include "net/rime/rime.h"
 
 #include "lib/list.h"
@@ -176,14 +177,13 @@ static const struct broadcast_callbacks broadcast_callbacks = {recv_broadcast};
 PROCESS_THREAD(sensor_cast_process, ev, data)
 {
 
-	printf("sensor_cast_process: waiting for daddy_addr");
 	PROCESS_EXITHANDLER(runicast_close(&runicast);)
 	PROCESS_BEGIN();
 
 	broadcast_open(&broadcast, 129, &broadcast_callbacks);
 
 
-	printf("sensor_cast_process: waiting for daddy_addr");
+	printf("sensor_cast_process: waiting for daddy_addr\n");
 	PROCESS_WAIT_UNTIL(daddy_addr != NULL);
 
 	runicast_open(&runicast, 129, &runicast_callbacks);
@@ -193,7 +193,7 @@ PROCESS_THREAD(sensor_cast_process, ev, data)
 	while(1)
 	{
 
-		printf("sensor_cast_process: main loop");
+		printf("sensor_cast_process: main loop\n");
 		static struct etimer et;
 		struct runicast_message msg;
 

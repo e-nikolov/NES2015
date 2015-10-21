@@ -238,9 +238,15 @@ PROCESS_THREAD(broadcast_process, ev, data)
 
   PROCESS_BEGIN();
 
+
+  printf("sensor_cast_process: waiting for daddy_addr\n");
+
   broadcast_open(&broadcast, 129, &broadcast_call);
 
+  printf("sensor_cast_process: waiting for daddy_addr\n");
   while(1) {
+
+	  printf("sensor_cast_process: waiting for daddy_addr\n");
 
     /* Send a broadcast every 16 - 32 seconds */
     etimer_set(&et, CLOCK_SECOND * 16 + random_rand() % (CLOCK_SECOND * 16));
@@ -261,6 +267,8 @@ PROCESS_THREAD(unicast_process, ev, data)
   PROCESS_EXITHANDLER(unicast_close(&unicast);)
     
   PROCESS_BEGIN();
+
+  printf("sensor_cast_process: waiting for daddy_addr");
 
   unicast_open(&unicast, 146, &unicast_callbacks);
 

@@ -1,4 +1,4 @@
-CONTIKI = ../../..
+CONTIKI = ../../../..
 
 all: sensor
 

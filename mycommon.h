@@ -14,5 +14,5 @@
 		static struct etimer SLEEP_TIMER_IN_SLEEP_MACRO; \
 		etimer_set(&SLEEP_TIMER_IN_SLEEP_MACRO,  (time * CLOCK_SECOND) / 1000);  \
 		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&SLEEP_TIMER_IN_SLEEP_MACRO));\
-	}
+	};
 

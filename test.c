@@ -64,7 +64,7 @@ PROCESS_THREAD(hello_world_process2, ev, data)
 
 
   printf("Process2 ended\n");
-  x = 1;
+  x = 2;
 
   PROCESS_END();
 }
@@ -84,7 +84,7 @@ PROCESS_THREAD(hello_world_process, ev, data)
 
   printf("other timer\n");
 
-  PROCESS_WAIT_UNTIL(x == 1);
+  PROCESS_WAIT_UNTIL(x == 2);
   printf("Bye, world\n");
 
   printf("%lld\n", t = clock_time());

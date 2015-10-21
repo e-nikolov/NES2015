@@ -49,7 +49,8 @@
 
 static int flag = 0;
 static int check = 0;
-
+static int schedule_flag = 0;
+static int nr_neighbors = 0;
 /* This is the structure of broadcast messages. */
 struct broadcast_message {
   uint8_t seqno;
@@ -107,8 +108,6 @@ static struct broadcast_conn broadcast;
 
 #define MAX_RETRANSMISSIONS 4
 #define NUM_HISTORY_ENTRIES 4
-
-static int nr_neighbors = 0;
 /*---------------------------------------------------------------------------*/
 PROCESS(initialization_process, "initialization");
 PROCESS(schedule_process, "schedule");
@@ -138,6 +137,12 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 {
   /* OPTIONAL: Sender history */
   struct history_entry *e = NULL;
+  char * receive_msg = "null";
+  char * address = "address";
+
+  struct neighbor *n;
+  struct broadcast_message *m;
+
   for(e = list_head(history_table); e != NULL; e = e->next) {
     if(linkaddr_cmp(&e->addr, from)) {
       break;
@@ -163,11 +168,6 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
     e->seq = seqno;
   }
 
-  char * receive_msg = "null";
-  char * address = "address";
-
-  struct neighbor *n;
-  struct broadcast_message *m;
   /* Grab the pointer to the incoming data. */
   receive_msg = packetbuf_dataptr();
   printf("runicast received with message %s\n",receive_msg);
@@ -234,12 +234,11 @@ static struct runicast_conn runicast;
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(initialization_process, ev, data)
 {
-  static struct etimer et;
+  static struct etimer et,dt;
   char * msg;
   struct neighbor *n;
   int randneighbor, i, j, x;
   static int k;
-  static int init_sch;
   PROCESS_EXITHANDLER(runicast_close(&runicast);)
 
   PROCESS_BEGIN();
@@ -256,13 +255,21 @@ PROCESS_THREAD(initialization_process, ev, data)
 	}
     /* Delay 2-4 seconds */
 	if (flag == 3)
+	{
 		etimer_set(&et, CLOCK_SECOND * 60);
+		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&dt));
+	}
 	else if(flag == 1)
-		etimer_set(&et, CLOCK_SECOND * 20);
+	{
+    	etimer_set(&dt, CLOCK_SECOND * 20);
+    	PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&dt));
+	}
 	else
+	{
 		etimer_set(&et, CLOCK_SECOND * 1);
+	    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+	}
 
-    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
     switch (flag){
     case 0:
     	broadcast_open(&broadcast, 129, &broadcast_call);
@@ -274,18 +281,19 @@ PROCESS_THREAD(initialization_process, ev, data)
         broadcast_close(&broadcast);
     break;
     case 1:
-        printf("actuator: waited for addresses\n");
-        if(init_sch!=1)
-        {
-        	flag = 2;
-        }
-        else
-        {
-        	flag = 3;
-        }
+    	printf("actuator: waited for addresses\n");
+    	if(schedule_flag != 1)
+    	{
+    		flag = 2;
+    	}
+    	else
+    	{
+    		flag = 3;
+    	}
     break;
     case 2:
-		 if(list_length(neighbors_list) > 0) {
+		if(list_length(neighbors_list) > 0)
+		{
 			  if(k >= nr_neighbors)
 			  {
 				  k = 0;
@@ -304,7 +312,7 @@ PROCESS_THREAD(initialization_process, ev, data)
 		if(k == nr_neighbors)
 		{
 			flag = 3;
-			init_sch = 1;
+			schedule_flag = 1;
 			printf("schedule sent\n");
 		}
 
@@ -328,11 +336,20 @@ PROCESS_THREAD(schedule_process, ev, data)
 	PROCESS_EXITHANDLER(broadcast_close(&broadcast);)
 
 	PROCESS_BEGIN();
+
 	while(1)
     {
-		etimer_set(&et, CLOCK_SECOND * 10);
+		etimer_set(&et, CLOCK_SECOND * 1);
 	    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-		//printf("KeepoPride\n");
+	    switch(schedule_flag){
+	    case 1:
+	    	//printf("")
+	    break;
+	    case 2:
+		break;
+	    default:
+	    break;
+	    }
     }
 
 

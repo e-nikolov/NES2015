@@ -48,7 +48,6 @@
 #include <stdio.h>
 static int flag = 0;
 static int check = 0;
-static int nr_tries = 0;
 /* This is the structure of broadcast messages. */
 struct broadcast_message {
   uint8_t seqno;
@@ -59,12 +58,6 @@ struct unicast_message {
   uint8_t type;
 };
 
-/* These are the types of unicast messages that we can send. */
-enum {
-  UNICAST_TYPE_PING,
-  UNICAST_TYPE_PONG,
-  UNICAST_TYPE_ACK
-};
 // integer to check for timeouts
 
 
@@ -128,7 +121,6 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
 
   struct neighbor *n;
   struct broadcast_message *m;
-  uint8_t seqno_gap;
 
   rcv_bfr = (char *)packetbuf_dataptr();
   if((strcmp(rcv_bfr, Request)==0) && (flag == 0))
@@ -137,11 +129,8 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
 	    		 from->u8[0], from->u8[1], rcv_bfr);
          flag = 1;
   }
-  if ((flag == 1) && (strcmp(rcv_bfr, Request)==0)){
-	  /* The packetbuf_dataptr() returns a pointer to the first data byte
-	     in the received packet. */
-	  m = packetbuf_dataptr();
-
+  if ((flag == 1) && (strcmp(rcv_bfr, Request)==0))
+  {
 	  /* Check if we already know this neighbor. */
 	  for(n = list_head(neighbors_list); n != NULL; n = list_item_next(n)) {
 
@@ -168,8 +157,6 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
 
 	    /* Initialize the fields. */
 	    linkaddr_copy(&n->addr, from);
-	    n->last_seqno = m->seqno - 1;
-	    n->avg_seqno_gap = SEQNO_EWMA_UNITY;
 
 	    /* Place the neighbor on the neighbor list. */
 	    list_add(neighbors_list, n);
@@ -192,6 +179,8 @@ MEMB(history_mem, struct history_entry, NUM_HISTORY_ENTRIES);
 static void
 recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 {
+  char * receive_msg;
+  struct runicast_message *msg;
   /* OPTIONAL: Sender history */
   struct history_entry *e = NULL;
   for(e = list_head(history_table); e != NULL; e = e->next) {
@@ -218,8 +207,7 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
     /* Update existing history entry */
     e->seq = seqno;
   }
-  char * receive_msg;
-    struct runicast_message *msg;
+
     /* Grab the pointer to the incoming data. */
     receive_msg = packetbuf_dataptr();
 
@@ -230,8 +218,6 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 	 print out a message and return a UNICAST_TYPE_PONG. */
 
   receive_msg = "null";
-
-
 }
 static const struct broadcast_callbacks broadcast_call = {broadcast_recv};
 static struct broadcast_conn broadcast;
@@ -269,37 +255,26 @@ PROCESS_THREAD(example_broadcast_process, ev, data)
   broadcast_open(&broadcast, 129, &broadcast_call);
 
 
-  while(flag != 3) {
-	  etimer_set(&et,  CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
+  while(1) {
+	  etimer_set(&et,  CLOCK_SECOND * 2 + random_rand() % (CLOCK_SECOND * 4));
 
 	  PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 	  switch(flag)
 	  {
 	  case 0:
-		  break;
+	  break;
 	  case 2:
-		  //broadcast_close(&broadcast);
 		  runicast_open(&runicast, 146, &runicast_callbacks);
 	      randneighbor = random_rand() % list_length(neighbors_list);
           n = list_head(neighbors_list);
-          //for(i = 0; i < randneighbor; i++) {
-          //  n = list_item_next(n);
-          //}          nr_tries++;
 
           printf("sending runicast to %d.%d with message %s\n", n->addr.u8[0], n->addr.u8[1],message);
 
-          //msg.type = UNICAST_TYPE_ACK;
           packetbuf_copyfrom(message, (strlen(message)+1));
           runicast_send(&runicast, &n->addr, MAX_RETRANSMISSIONS);
-
-
-/*          packetbuf_copyfrom("address", 8);
-		  broadcast_send(&broadcast);
-		  printf("broadcast to actuator sent\n");*/
           flag = 3;
 	  break;
 	  default:
-		  flag = 0;
 	  break;
 	  }
 

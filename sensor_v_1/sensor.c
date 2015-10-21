@@ -14,6 +14,7 @@
 #include <stdio.h>
 
 #include "contiki.h"
+#include "../mycommon.h"
 #include "net/rime/rime.h"
 
 #include "lib/list.h"
@@ -179,6 +180,10 @@ static const struct broadcast_callbacks broadcast_callbacks = {recv_broadcast};
 
 PROCESS_THREAD(sensor_cast_process, ev, data)
 {
+/*<<<<<<< HEAD
+=======
+
+>>>>>>> 27dfc72bfdc2fa7acf52e388897e0c00a567c5c1*/
 	PROCESS_EXITHANDLER(runicast_close(&runicast);)
 	PROCESS_BEGIN();
 

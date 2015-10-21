@@ -91,7 +91,11 @@ recv_broadcast(struct broadcast_conn *c, const linkaddr_t *from)
 {
 	if(daddy_addr == NULL)
 	{
-		linkaddr_copy(daddy_addr, from);
+		printf("received broadcast\n");
+		linkaddr_copy(&daddy_addr, &from);
+
+		printf("daddy_addr is %u.%u.\n", daddy_addr->u8[0], daddy_addr->u8[1]);
+		printf("daddy_addr set is: %d\n", daddy_addr != NULL);
 	}
 
 	broadcast_close(&broadcast);
@@ -176,16 +180,20 @@ static const struct broadcast_callbacks broadcast_callbacks = {recv_broadcast};
 
 PROCESS_THREAD(sensor_cast_process, ev, data)
 {
+/*<<<<<<< HEAD
+=======
 
+>>>>>>> 27dfc72bfdc2fa7acf52e388897e0c00a567c5c1*/
 	PROCESS_EXITHANDLER(runicast_close(&runicast);)
 	PROCESS_BEGIN();
 
 	broadcast_open(&broadcast, 129, &broadcast_callbacks);
+	printf("initially daddy_addr is %u.%u.\n", daddy_addr->u8[0], daddy_addr->u8[1]);
+	printf("daddy_addr set is: %d\n", daddy_addr != NULL);
 
-
-	printf("sensor_cast_process: waiting for daddy_addr\n");
 	PROCESS_WAIT_UNTIL(daddy_addr != NULL);
 
+	printf("sensor_cast_process: daddy_addr received\n");
 	runicast_open(&runicast, 129, &runicast_callbacks);
 
 	time_delay = 2 * (random_rand() % 8);

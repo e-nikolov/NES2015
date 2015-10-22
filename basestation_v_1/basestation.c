@@ -98,10 +98,10 @@ recv(struct mesh_conn *c, const linkaddr_t *from, uint8_t hops)
   struct mesh_message * received_message;
 
   received_message = packetbuf_dataptr();
-  uint8_t *data = received_message->type;
+  //uint8_t data = **received_message->type;
   printf("Type == %d\n",received_message->type);
   printf("Data received from %d.%d: %d (%d)\n",
-	 from->u8[0], from->u8[1], &received_message->data, packetbuf_datalen());
+	 from->u8[0], from->u8[1], received_message->data, packetbuf_datalen());
 
   //packetbuf_copyfrom(received_message, sizeof(received_message));
   //mesh_send(&mesh, from);

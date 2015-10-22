@@ -92,6 +92,7 @@ recv_broadcast(struct broadcast_conn *c, const linkaddr_t *from)
 			br_msg.data = address_base;
 			packetbuf_copyfrom(&br_msg, sizeof(br_msg));
 			broadcast_send(&broadcast);
+			broadcast_close(&broadcast);
 		}
 	}
 }

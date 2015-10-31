@@ -14,7 +14,6 @@
 #include <stdio.h>
 
 #include "contiki.h"
-#include "../mycommon.h"
 #include "net/rime/rime.h"
 
 #include "lib/list.h"
@@ -27,61 +26,13 @@
 
 #include "sensor_data_sender.h"
 #include "sensor_node_setup.h"
-
-/*
- * Then we define the values needed for runicast to be reliable ;), wich are
- * the amount of allowable rettransmissions before accepting failure, and
- * the amount of message id's in the history list, wich should be enough
- * to contain at least one message from each parent node (so, one :D)
- */
-
-#define MAX_RETRANSMISSIONS 4
-#define NUM_HISTORY_ENTRIES 2
-
-
-/*
- * create runicast_msg structure
- * create broadcast_msg structure (unneccesary?)
- * create a sender_history list to detect duplicate messages
- */
-struct runicast_message
-{
-	uint8_t type;
-	int16_t data;
-};
-
-/*
-struct broadcast_msg
-{
-	uint8_t type;
-};
-*/
-enum
-{
-	RUNICAST_TYPE_SCHEDULE,
-	RUNICAST_TYPE_TEMP,
-	RUNICAST_TYPE_HUMID
-};
-
-struct history_entry
-{
-	struct history_entry *next;
-	linkaddr_t addr;
-	uint8_t seq;
-};
-
-linkaddr_t *daddy_addr;
-int schedule_set = 0;
-
-uint16_t time_delay = -1;
+#include "../mycommon.h"
 
 MEMB(history_mem, struct history_entry, NUM_HISTORY_ENTRIES);
 LIST(history_table);
 
-/*---------------------------------------------------------------------------*/
-static struct runicast_conn runicast;
-static struct broadcast_conn broadcast;
 
+// Receive new time delay.
 static void
 recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 {
@@ -152,10 +103,63 @@ timedout_runicast(struct runicast_conn *c, const linkaddr_t *to, uint8_t retrans
 			to->u8[0], to->u8[1], retransmissions);
 }
 
-static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
-							     	 	 	 	 	 	 	 sent_runicast,
-															 timedout_runicast};
 
+
+/*
+ * now we define what to do on receiving, sending or timing out a runicast_msg or broadcast
+ */
+
+static void
+recv_broadcast(struct broadcast_conn *c, const linkaddr_t *from)
+{
+	printf("daddy addr is %s.\n", daddy_addr == NULL ? "NULL" : "not NULL");
+	printf("daddy addr is %s.\n", &daddy_addr == NULL ? "NULL" : "not NULL");
+
+
+	// if this is a network setup packet, sent from an actuator
+    leds_toggle(LEDS_ALL); // toggle all leds
+
+    linkaddr_copy(&daddy_addr, from);
+    // Start data sending process.
+    process_start(&data_sender_process, NULL);
+
+    // remove the broadcast listener.
+	broadcast_close(&broadcast);
+
+    // endif
+}
+
+/*---------------------------------------------------------------------------*/
+// Setup the network when button is pressed.
+
+// If button is pressed, wait for a broadcast from an actuator.
+
+PROCESS(sensor_node_setup_process, "sensor cast");
+AUTOSTART_PROCESSES(&sensor_node_setup_process);
+/*---------------------------------------------------------------------------*/
+PROCESS_THREAD(sensor_node_setup_process, ev, data)
+{
+
+	PROCESS_EXITHANDLER(runicast_close(&runicast);)
+	PROCESS_BEGIN();
+
+	SENSORS_ACTIVATE(button_sensor);
+	SENSORS_ACTIVATE(light_sensor); // activate sensor
+
+
+	while(1) {
+		// Wait for broadcast from actuator.
+
+	    process_exit(&data_sender_process);
+
+		printf("sensor_cast_process: waiting for daddy_addr\n");
+		broadcast_open(&broadcast, 129, &broadcast_callbacks);
+
+		PROCESS_WAIT_EVENT_UNTIL(ev == sensors_event && data == &button_sensor); // wait for button press event
+	}
+
+	PROCESS_END();
+}
 
 /*---------------------------------------------------------------------------*/
 PROCESS(data_sender_process, "Data Sender");
@@ -202,67 +206,3 @@ PROCESS_THREAD(data_sender_process, ev, data)
 
 	PROCESS_END();
 }
-
-/*
- * now we define what to do on receiving, sending or timing out a runicast_msg or broadcast
- */
-
-static void
-recv_broadcast(struct broadcast_conn *c, const linkaddr_t *from)
-{
-	printf("daddy addr is %s.\n", daddy_addr == NULL ? "NULL" : "not NULL");
-	printf("daddy addr is %s.\n", &daddy_addr == NULL ? "NULL" : "not NULL");
-
-
-	// if this is a network setup packet, sent from an actuator
-    leds_toggle(LEDS_ALL); // toggle all leds
-
-    linkaddr_copy(&daddy_addr, from);
-    // Start data sending process.
-    process_start(&data_sender_process, NULL);
-
-    // remove the broadcast listener.
-	broadcast_close(&broadcast);
-
-    // endif
-}
-
-
-static const struct broadcast_callbacks broadcast_callbacks = {recv_broadcast};
-
-/*-----------------------------------------------------------------------------------*/
-
-
-/*---------------------------------------------------------------------------*/
-// Setup the network when button is pressed.
-
-// If button is pressed, wait for a broadcast from an actuator.
-
-PROCESS(sensor_node_setup_process, "sensor cast");
-AUTOSTART_PROCESSES(&sensor_node_setup_process);
-/*---------------------------------------------------------------------------*/
-PROCESS_THREAD(sensor_node_setup_process, ev, data)
-{
-
-	PROCESS_EXITHANDLER(runicast_close(&runicast);)
-	PROCESS_BEGIN();
-
-	SENSORS_ACTIVATE(button_sensor);
-	SENSORS_ACTIVATE(light_sensor); // activate sensor
-
-
-	while(1) {
-		// Wait for broadcast from actuator.
-
-	    process_exit(&data_sender_process);
-
-		printf("sensor_cast_process: waiting for daddy_addr\n");
-		broadcast_open(&broadcast, 129, &broadcast_callbacks);
-
-		PROCESS_WAIT_EVENT_UNTIL(ev == sensors_event && data == &button_sensor); // wait for button press event
-	}
-
-	PROCESS_END();
-}
-
-

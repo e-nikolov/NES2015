@@ -14,7 +14,6 @@
 #include <stdio.h>
 
 #include "contiki.h"
-#include "../mycommon.h"
 #include "net/rime/rime.h"
 
 #include "lib/list.h"
@@ -25,11 +24,96 @@
 #include "dev/light-sensor.h"
 #include "dev/leds.h"
 
+#include "../mycommon.h"
+
 
 /*---------------------------------------------------------------------------*/
 // Setup the network when button is pressed.
 
 // If button is pressed, wait for a broadcast from an actuator.
+
+/* This MEMB() definition defines a memory pool from which we allocate
+   neighbor entries. */
+MEMB(neighbors_memb, struct neighbor, MAX_NEIGHBORS);
+
+/* The neighbors_list is a Contiki list that holds the neighbors we
+   have seen thus far. */
+LIST(neighbors_list);
+
+static void
+recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
+{
+	struct neighbor *n;
+	struct broadcast_message *m;
+	uint8_t seqno_gap;
+
+	/* The packetbuf_dataptr() returns a pointer to the first data byte
+	 in the received packet. */
+	m = packetbuf_dataptr();
+
+	int i = 0;
+	/* Check if we already know this neighbor. */
+	for(n = list_head(neighbors_list); n != NULL; n = list_item_next(n)) {
+		/* We break out of the loop if the address of the neighbor matches
+		   the address of the neighbor from which we received this
+		   broadcast message. */
+		if(linkaddr_cmp(&n->addr, from)) {
+		  break;
+		}
+		i++;
+	}
+
+
+	// i-th neighbor should transmit at clock_time() + k * INTERVAL + i * (INTERVAL / MAX_SENSORS)
+
+	/* If n is NULL, this neighbor was not found in our list, and we
+	 allocate a new struct neighbor from the neighbors_memb memory
+	 pool. */
+	if(n == NULL) {
+	n = memb_alloc(&neighbors_memb);
+
+	/* If we could not allocate a new neighbor entry, we give up. We
+	   could have reused an old neighbor entry, but we do not do this
+	   for now. */
+	if(n == NULL) {
+	  return;
+	}
+
+	/* Initialize the fields. */
+	linkaddr_copy(&n->addr, from);
+	n->last_seqno = m->seqno - 1;
+	n->avg_seqno_gap = SEQNO_EWMA_UNITY;
+
+	/* Place the neighbor on the neighbor list. */
+	list_add(neighbors_list, n);
+	}
+
+	/* We can now fill in the fields in our neighbor entry. */
+	n->last_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
+	n->last_lqi = packetbuf_attr(PACKETBUF_ATTR_LINK_QUALITY);
+
+	/* Compute the average sequence number gap we have seen from this neighbor. */
+	seqno_gap = m->seqno - n->last_seqno;
+	n->avg_seqno_gap = (((uint32_t)seqno_gap * SEQNO_EWMA_UNITY) *
+					  SEQNO_EWMA_ALPHA) / SEQNO_EWMA_UNITY +
+					  ((uint32_t)n->avg_seqno_gap * (SEQNO_EWMA_UNITY -
+													 SEQNO_EWMA_ALPHA)) /
+	SEQNO_EWMA_UNITY;
+
+	/* Remember last seqno we heard. */
+	n->last_seqno = m->seqno;
+
+	/* Print out a message. */
+	printf("broadcast message received from %d.%d with seqno %d, RSSI %u, LQI %u, avg seqno gap %d.%02d\n",
+		 from->u8[0], from->u8[1],
+		 m->seqno,
+		 packetbuf_attr(PACKETBUF_ATTR_RSSI),
+		 packetbuf_attr(PACKETBUF_ATTR_LINK_QUALITY),
+		 (int)(n->avg_seqno_gap / SEQNO_EWMA_UNITY),
+		 (int)(((100UL * n->avg_seqno_gap) / SEQNO_EWMA_UNITY) % 100));
+
+
+}
 
 
 static struct broadcast_conn broadcast;
@@ -71,3 +155,4 @@ PROCESS_THREAD(actuator_node_setup_process, ev, data)
 }
 
 
+// Wait for unicasts with data. If we get something from a new node, put it in the next available time slot and tell it when it should send data next.

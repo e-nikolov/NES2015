@@ -32,6 +32,9 @@ MEMB(history_mem, struct history_entry, NUM_HISTORY_ENTRIES);
 LIST(history_table);
 
 
+linkaddr_t *daddy_addr;
+
+
 // Receive new time delay.
 static void
 recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
@@ -70,16 +73,26 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 //		e->seq = seqno;
 //	}
 
-	printf("runicast message received from %d.%d, seqno %d\n",
-			from->u8[0], from->u8[1], seqno);
-
 	struct runicast_message *received_msg = packetbuf_dataptr();
+
+	printf("runicast message received from %d, data: %d\n",
+			from->u16, received_msg->data);
+
+
+	clock_time_t asd = -1;
+	printf("lalalala %l\n", (clock_time_t)(1));
+	printf("lalalala %lu\n", (clock_time_t)(1));
+	printf("lalalala %d\n", (clock_time_t)(1));
 
 
 	if (received_msg->type == RUNICAST_TYPE_SCHEDULE)
 	{
 		schedule_set = 1;
-		time_delay = received_msg->data;
+		time_delay = (clock_time_t)(received_msg->data);
+		printf("should send again in %lu\n", time_delay);
+		time_delay *= 1000;
+
+		printf("should send again in %lu\n", time_delay);
 		process_post(&data_sender_process, NEW_TIMER_RECEIVED_EVENT, time_delay);
 	}
 	else
@@ -112,14 +125,22 @@ timedout_runicast(struct runicast_conn *c, const linkaddr_t *to, uint8_t retrans
 static void
 recv_broadcast(struct broadcast_conn *c, const linkaddr_t *from)
 {
-	printf("daddy addr is %s.\n", daddy_addr == NULL ? "NULL" : "not NULL");
-	printf("daddy addr is %s.\n", &daddy_addr == NULL ? "NULL" : "not NULL");
+	//printf("daddy addr is %s.\n", daddy_addr == NULL ? "NULL" : "not NULL");
+	//printf("daddy addr is %s.\n", &daddy_addr == NULL ? "NULL" : "not NULL");
 
 
 	// if this is a network setup packet, sent from an actuator
     leds_toggle(LEDS_ALL); // toggle all leds
 
     linkaddr_copy(&daddy_addr, from);
+
+	printf("receiving from %d\n", from->u16);
+	printf("daddy_addr: %d\n", daddy_addr);
+
+	char * received_msg = packetbuf_dataptr();
+
+	printf("received: %s\n", received_msg);
+
     // Start data sending process.
     process_start(&data_sender_process, NULL);
 
@@ -170,13 +191,14 @@ PROCESS_THREAD(data_sender_process, ev, data)
 	PROCESS_BEGIN();
 
 
-	runicast_open(&runicast, 129, &runicast_callbacks);
+	runicast_open(&runicast, 130, &runicast_callbacks);
 
 	while(1)
 	{
 		if(!schedule_set) {
 			// TODO select a suitable random time;
-			time_delay = 2 * (random_rand() % 8);
+			//time_delay = 2 * (random_rand() % 8);
+			time_delay = 5000;
 		}
 
 		static struct etimer et;
@@ -185,15 +207,17 @@ PROCESS_THREAD(data_sender_process, ev, data)
 		// Wait either for a timeout or for an event from the runicast receiver.
 		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et) || ev == NEW_TIMER_RECEIVED_EVENT);
 
-		if(ev == PROCESS_EVENT_CONTINUE) {
+		if(ev == NEW_TIMER_RECEIVED_EVENT) {
 			// time_delay = data;
+
+			printf("sleeping for %lu\n", time_delay);
 			SLEEP_THREAD(time_delay);
 		}
 
 		printf("sensor_cast_process: main loop\n");
 		struct runicast_message msg;
 
-		printf("sending runicast to %d.%d\n", daddy_addr->u8[0], daddy_addr->u8[1]);
+		printf("sending runicast to %d.%d\n", daddy_addr);
 
 		msg.type = RUNICAST_TYPE_TEMP;
 		msg.data = random_rand() % 10;

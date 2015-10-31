@@ -40,18 +40,36 @@ MEMB(neighbors_memb, struct neighbor, MAX_NEIGHBORS);
    have seen thus far. */
 LIST(neighbors_list);
 
+
+static void
+sent_runicast(struct runicast_conn *c, const linkaddr_t *to, uint8_t retransmissions)
+{
+
+	printf("runicast message sent to %d.%d, retransmissions %d\n",
+			to->u8[0], to->u8[1], retransmissions);
+}
+
+static void
+timedout_runicast(struct runicast_conn *c, const linkaddr_t *to, uint8_t retransmissions)
+{
+	printf("runicast message timed out when sending to %d.%d, retransmissions %d\n",
+			to->u8[0], to->u8[1], retransmissions);
+}
+
+
 static void
 recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 {
+	printf("receiving runicast from sensor %d\n", from->u16);
 	struct neighbor *n;
-	struct broadcast_message *m;
+	struct runicast_message *m;
 	uint8_t seqno_gap;
 
 	/* The packetbuf_dataptr() returns a pointer to the first data byte
 	 in the received packet. */
 	m = packetbuf_dataptr();
 
-	int i = 0;
+	int node_id = 0;
 	/* Check if we already know this neighbor. */
 	for(n = list_head(neighbors_list); n != NULL; n = list_item_next(n)) {
 		/* We break out of the loop if the address of the neighbor matches
@@ -60,11 +78,27 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 		if(linkaddr_cmp(&n->addr, from)) {
 		  break;
 		}
-		i++;
+		node_id++;
+
 	}
 
-
 	// i-th neighbor should transmit at clock_time() + k * INTERVAL + i * (INTERVAL / MAX_SENSORS)
+//	long expected_time = clock_seconds() % TIME_INTERVAL + node_id * TIME_INTERVAL / MAX_NEIGHBORS;
+
+	// received = clock_seconds();
+	// expected = k * TIME_INTERVAL + node_id * TIME_INTERVAL / MAX_NEIGHBORS; // for some k
+	// late = received - expected;
+	// early = expected - received;
+	// next = TIME_INTERVAL + early;
+	//
+	int next_time = TIME_INTERVAL - (clock_seconds() % TIME_INTERVAL - node_id * TIME_INTERVAL / MAX_NEIGHBORS);
+	if(next_time < TIME_INTERVAL / 2) next_time += TIME_INTERVAL;
+
+	printf("sensor %d should send again in %d seconds\n", from->u16, next_time);
+
+//	long received_time = clock_seconds() % TIME_INTERVAL;
+
+
 
 	/* If n is NULL, this neighbor was not found in our list, and we
 	 allocate a new struct neighbor from the neighbors_memb memory
@@ -85,7 +119,7 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 	n->avg_seqno_gap = SEQNO_EWMA_UNITY;
 
 	/* Place the neighbor on the neighbor list. */
-	list_add(neighbors_list, n);
+		list_add(neighbors_list, n);
 	}
 
 	/* We can now fill in the fields in our neighbor entry. */
@@ -104,7 +138,7 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 	n->last_seqno = m->seqno;
 
 	/* Print out a message. */
-	printf("broadcast message received from %d.%d with seqno %d, RSSI %u, LQI %u, avg seqno gap %d.%02d\n",
+	printf("runicast message received from %d.%d with seqno %d, RSSI %u, LQI %u, avg seqno gap %d.%02d\n",
 		 from->u8[0], from->u8[1],
 		 m->seqno,
 		 packetbuf_attr(PACKETBUF_ATTR_RSSI),
@@ -112,13 +146,28 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 		 (int)(n->avg_seqno_gap / SEQNO_EWMA_UNITY),
 		 (int)(((100UL * n->avg_seqno_gap) / SEQNO_EWMA_UNITY) % 100));
 
+	struct runicast_message msg;
 
+	printf("sending runicast to %d\n", from->u16);
+
+	msg.type = RUNICAST_TYPE_SCHEDULE;
+	msg.data = next_time;
+
+	packetbuf_copyfrom(&msg, sizeof(msg));
+	runicast_send(&runicast, from, MAX_RETRANSMISSIONS);
 }
 
 
-static struct broadcast_conn broadcast;
+static void
+recv_broadcast(struct broadcast_conn *c, const linkaddr_t *from)
+{
+	printf("IGNORE BROADCAST\n");
+//	printf("daddy addr is %s.\n", daddy_addr == NULL ? "NULL" : "not NULL");
+//	printf("daddy addr is %s.\n", &daddy_addr == NULL ? "NULL" : "not NULL");
 
-static const struct broadcast_callbacks broadcast_callbacks = {};
+    // endif
+}
+
 
 PROCESS(actuator_node_setup_process, "sensor cast");
 AUTOSTART_PROCESSES(&actuator_node_setup_process);
@@ -147,6 +196,12 @@ PROCESS_THREAD(actuator_node_setup_process, ev, data)
 		broadcast_send(&broadcast);
 
 		broadcast_close(&broadcast);
+
+
+		runicast_close(&runicast);
+		runicast_open(&runicast, 130, &runicast_callbacks);
+
+		printf("waiting for runicast from sensors\n");
 
 		PROCESS_WAIT_EVENT_UNTIL(ev == sensors_event && data == &button_sensor); // wait for button press event
 	}

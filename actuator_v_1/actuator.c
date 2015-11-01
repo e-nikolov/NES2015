@@ -184,6 +184,9 @@ PROCESS_THREAD(actuator_node_setup_process, ev, data)
 
 	while(1) {
 
+		printf("waiting for runicast from sensors\n");
+
+		PROCESS_WAIT_EVENT_UNTIL(ev == sensors_event && data == &button_sensor); // wait for button press event
 
 		//	    process_exit(&data_sender_process);
 
@@ -201,9 +204,6 @@ PROCESS_THREAD(actuator_node_setup_process, ev, data)
 		runicast_close(&runicast);
 		runicast_open(&runicast, 130, &runicast_callbacks);
 
-		printf("waiting for runicast from sensors\n");
-
-		PROCESS_WAIT_EVENT_UNTIL(ev == sensors_event && data == &button_sensor); // wait for button press event
 	}
 
 	PROCESS_END();

@@ -27,7 +27,7 @@
 
 #define MAX_RETRANSMISSIONS 4
 #define NUM_HISTORY_ENTRIES 2
-#define MAX_NEIGHBORS 12
+#define MAX_NEIGHBORS 60
 #define TIME_INTERVAL 60
 
 /* These two defines are used for computing the moving average for the

@@ -37,79 +37,39 @@
  *         Adam Dunkels <adam@sics.se>
  */
 
+#include <stdio.h>
+
 #include "contiki.h"
-#include "dev/button-sensor.h" 
-#include "dev/light-sensor.h" 
+#include "net/rime/rime.h"
+
+#include "lib/list.h"
+#include "lib/memb.h"
+
+
+#include "dev/button-sensor.h"
+#include "dev/light-sensor.h"
 #include "dev/leds.h"
+
 #include "mycommon.h"
 
-#include <stdio.h> /* For printf() */
-static int counter = 0;
-static int long long  t = 0;
-static int x = 0;
 
 /*---------------------------------------------------------------------------*/
 PROCESS(hello_world_process2, "Hello world process2");
+AUTOSTART_PROCESSES(&hello_world_process2);
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(hello_world_process2, ev, data)
 {
+	PROCESS_BEGIN();
 
-  static struct etimer et;
-  PROCESS_BEGIN();
+	while(1) {
 
-  printf("Process2\n");
+		int time_delay = 5000 + abs(random_rand() % 5000);
 
+		printf("%d\n", time_delay);
 
-  SLEEP_THREAD(5000);
+		SLEEP_THREAD(5000);
+	}
 
-
-  printf("Process2 ended\n");
-  x = 2;
-
-  PROCESS_END();
-}
-/*---------------------------------------------------------------------------*/
-PROCESS(hello_world_process, "Hello world process");
-AUTOSTART_PROCESSES(&hello_world_process, &hello_world_process2);
-/*---------------------------------------------------------------------------*/
-PROCESS_THREAD(hello_world_process, ev, data)
-{
-  PROCESS_BEGIN();
-  
-  SENSORS_ACTIVATE(button_sensor); 
-  SENSORS_ACTIVATE(light_sensor); // activate sensor  
-  printf("Hello, world\n");
-
-  SLEEP_THREAD(2000);
-
-  printf("other timer\n");
-
-  PROCESS_WAIT_UNTIL(x == 2);
-  printf("Bye, world\n");
-
-  printf("%lld\n", t = clock_time());
-  while(1)
-  {
-    PROCESS_WAIT_EVENT_UNTIL(ev == sensors_event && data == &button_sensor); // wait for button press event
-
-	printf("time: %lld\n", ((clock_time() - t)*1000)/CLOCK_SECOND);
-	printf("time: %d\n", CLOCK_SECOND);
-	t = clock_time();
-
-    counter++;
-    leds_toggle(LEDS_ALL); // toggle all leds
-    printf("Light: \%u\n",light_sensor.value(0)); //print out current sensor value
-    printf("Button counter: \%d\n",counter);//print out button counter
-  }
-/*
-  PROCESS_WAIT_EVENT();
-  if(ev == sensor_event && data == &button_sensor)
-  {
-
-  }
-*/
-  
-
-  PROCESS_END();
+	PROCESS_END();
 }
 /*---------------------------------------------------------------------------*/

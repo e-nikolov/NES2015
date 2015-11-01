@@ -197,8 +197,8 @@ PROCESS_THREAD(data_sender_process, ev, data)
 	{
 		if(!schedule_set) {
 			// TODO select a suitable random time;
-			//time_delay = 2 * (random_rand() % 8);
-			time_delay = 5000;
+			time_delay = 5000 + (abs(random_rand() % 50*130));
+			//time_delay = 5000;
 		}
 
 		static struct etimer et;

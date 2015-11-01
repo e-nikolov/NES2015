@@ -107,21 +107,6 @@ struct neighbor {
 
   /* The ->addr field holds the Rime address of the neighbor. */
   linkaddr_t addr;
-
-  /* The ->last_rssi and ->last_lqi fields hold the Received Signal
-     Strength Indicator (RSSI) and CC2420 Link Quality Indicator (LQI)
-     values that are received for the incoming broadcast packets. */
-  uint16_t last_rssi, last_lqi;
-
-  /* Each broadcast packet contains a sequence number (seqno). The
-     ->last_seqno field holds the last sequenuce number we saw from
-     this neighbor. */
-  uint8_t last_seqno;
-
-  /* The ->avg_gap contains the average seqno gap that we have seen
-     from this neighbor. */
-  uint32_t avg_seqno_gap;
-
 };
 
 

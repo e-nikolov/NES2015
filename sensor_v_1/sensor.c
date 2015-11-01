@@ -27,72 +27,30 @@
 #include "sensor_data_sender.h"
 #include "sensor_node_setup.h"
 #include "../mycommon.h"
+#include "sensor.h";
 
 MEMB(history_mem, struct history_entry, NUM_HISTORY_ENTRIES);
 LIST(history_table);
 
 
-linkaddr_t *daddy_addr;
+linkaddr_t *actuator_address;
 
 
 // Receive new time delay.
 static void
-recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
+recv_runicast_schedule(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 {
-//	struct history_entry *e = NULL;
-//
-//	for(e = list_head(history_table); e != NULL; e = e->next)
-//	{
-//		if(linkaddr_cmp(&e->addr, from))
-//		{
-//			break;
-//		}
-//	}
-//
-//	if(e == NULL)
-//	{
-//		/* Create new history entry */
-//		e = memb_alloc(&history_mem);
-//		if(e == NULL)
-//		{
-//			e = list_chop(history_table); /* Remove oldest at full history */
-//		}
-//		linkaddr_copy(&e->addr, from);
-//		e->seq = seqno;
-//		list_push(history_table, e);
-//	}
-//	else
-//	{
-//		/* Detect duplicate callback */
-//		if(e->seq == seqno)
-//		{
-//			printf("runicast message received from %d.%d, seqno %d (DUPLICATE)\n",
-//					from->u8[0], from->u8[1], seqno);
-//		}
-//		/* Update existing history entry */
-//		e->seq = seqno;
-//	}
-
 	struct runicast_message *received_msg = packetbuf_dataptr();
 
-	printf("runicast message received from %d, data: %d\n",
+	printf("Runicast received from actuator with address %d, data: %d\n",
 			from->u16, received_msg->data);
-
-
-	clock_time_t asd = -1;
-	printf("lalalala %l\n", (clock_time_t)(1));
-	printf("lalalala %lu\n", (clock_time_t)(1));
-	printf("lalalala %d\n", (clock_time_t)(1));
-
 
 	if (received_msg->type == RUNICAST_TYPE_SCHEDULE)
 	{
 		schedule_set = 1;
 		time_delay = (clock_time_t)(received_msg->data);
-		printf("should send again in %lu\n", time_delay);
+		printf("Should send again in %lu seconds\n", time_delay);
 		time_delay *= 1000;
-
-		printf("should send again in %lu\n", time_delay);
 		process_post(&data_sender_process, NEW_TIMER_RECEIVED_EVENT, time_delay);
 	}
 	else
@@ -105,15 +63,16 @@ static void
 sent_runicast(struct runicast_conn *c, const linkaddr_t *to, uint8_t retransmissions)
 {
 
-	printf("runicast message sent to %d.%d, retransmissions %d\n",
-			to->u8[0], to->u8[1], retransmissions);
+	printf("Runicast message sent to %d, attempts: %d\n",
+			to->u16, retransmissions);
+
 }
 
 static void
 timedout_runicast(struct runicast_conn *c, const linkaddr_t *to, uint8_t retransmissions)
 {
-	printf("runicast message timed out when sending to %d.%d, retransmissions %d\n",
-			to->u8[0], to->u8[1], retransmissions);
+	printf("Runicast message timed out when sending to %d, attempts: %d\n",
+			to->u16, retransmissions);
 }
 
 
@@ -123,31 +82,22 @@ timedout_runicast(struct runicast_conn *c, const linkaddr_t *to, uint8_t retrans
  */
 
 static void
-recv_broadcast(struct broadcast_conn *c, const linkaddr_t *from)
+recv_broadcast_actuator_adv(struct broadcast_conn *c, const linkaddr_t *from)
 {
-	//printf("daddy addr is %s.\n", daddy_addr == NULL ? "NULL" : "not NULL");
-	//printf("daddy addr is %s.\n", &daddy_addr == NULL ? "NULL" : "not NULL");
-
-
-	// if this is a network setup packet, sent from an actuator
     leds_toggle(LEDS_ALL); // toggle all leds
 
-    linkaddr_copy(&daddy_addr, from);
-
-	printf("receiving from %d\n", from->u16);
-	printf("daddy_addr: %d\n", daddy_addr);
+    linkaddr_copy(&actuator_address, from);
 
 	char * received_msg = packetbuf_dataptr();
 
-	printf("received: %s\n", received_msg);
+	printf("Receiving an actuator advertisement from %d\n", from->u16);
+//	printf("Received: %s\n", received_msg);
 
     // Start data sending process.
     process_start(&data_sender_process, NULL);
 
     // remove the broadcast listener.
 	broadcast_close(&broadcast);
-
-    // endif
 }
 
 /*---------------------------------------------------------------------------*/
@@ -155,7 +105,7 @@ recv_broadcast(struct broadcast_conn *c, const linkaddr_t *from)
 
 // If button is pressed, wait for a broadcast from an actuator.
 
-PROCESS(sensor_node_setup_process, "sensor cast");
+PROCESS(sensor_node_setup_process, "sensor node setup process");
 AUTOSTART_PROCESSES(&sensor_node_setup_process);
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(sensor_node_setup_process, ev, data)
@@ -173,8 +123,8 @@ PROCESS_THREAD(sensor_node_setup_process, ev, data)
 
 	    process_exit(&data_sender_process);
 
-		printf("sensor_cast_process: waiting for daddy_addr\n");
-		broadcast_open(&broadcast, 129, &broadcast_callbacks);
+		printf("Waiting for an actuator advertisement.\n");
+		broadcast_open(&broadcast, 129, &actuator_adv_broadcast_callbacks);
 
 		PROCESS_WAIT_EVENT_UNTIL(ev == sensors_event && data == &button_sensor); // wait for button press event
 	}
@@ -191,39 +141,40 @@ PROCESS_THREAD(data_sender_process, ev, data)
 	PROCESS_BEGIN();
 
 
-	runicast_open(&runicast, 130, &runicast_callbacks);
+	runicast_open(&runicast, 130, &runicast_schedule_callbacks);
 
 	while(1)
 	{
 		if(!schedule_set) {
-			// TODO select a suitable random time;
-			time_delay = 5000 + (abs(random_rand() % 50*130));
+			// Random time between 5 and 15 seconds
+			time_delay = 5000 + (abs(random_rand() % 10000));
 			//time_delay = 5000;
+
+			printf("Will wait for a schedule for a random time (%lu seconds) before retrying.\n", time_delay / 1000);
 		}
 
 		static struct etimer et;
 		etimer_set(&et,  (time_delay * CLOCK_SECOND) / 1000);
 
-		// Wait either for a timeout or for an event from the runicast receiver.
+		// Wait either for a timeout or for an event from the schedule receiver.
 		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et) || ev == NEW_TIMER_RECEIVED_EVENT);
 
 		if(ev == NEW_TIMER_RECEIVED_EVENT) {
 			// time_delay = data;
 
-			printf("sleeping for %lu\n", time_delay);
+			printf("Sleeping for %lu seconds.\n", time_delay / 1000);
 			SLEEP_THREAD(time_delay);
 		}
 
-		printf("sensor_cast_process: main loop\n");
 		struct runicast_message msg;
 
-		printf("sending runicast to %d.%d\n", daddy_addr);
+		printf("Sending data to actuator\n", actuator_address->u16);
 
 		msg.type = RUNICAST_TYPE_TEMP;
 		msg.data = random_rand() % 10;
 
 		packetbuf_copyfrom(&msg, sizeof(msg));
-		runicast_send(&runicast, &daddy_addr, MAX_RETRANSMISSIONS);
+		runicast_send(&runicast, &actuator_address, MAX_RETRANSMISSIONS);
 
 	}
 

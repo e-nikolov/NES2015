@@ -109,6 +109,7 @@ recv(struct mesh_conn *c, const linkaddr_t *from, uint8_t hops)
 {
 
 }
+
 static const struct broadcast_callbacks broadcast_callbacks = {recv_broadcast};
 const static struct mesh_callbacks callbacks = {recv, sent, timedout};
 /*---------------------------------------------------------------------------*/

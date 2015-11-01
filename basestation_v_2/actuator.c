@@ -57,18 +57,13 @@ struct broadcast
 	uint8_t type;
 	int16_t data;
 };
-struct mesh_message
-{
-	int type;
-	int data;
-};
 enum
 {
 	BROADCAST_TYPE_DISCOVERY,
 	MESH_TYPE_TEMP,
 	MESH_TYPE_HUMID
 };
-static int check = 0;
+
 
 static struct broadcast_conn broadcast;
 uint16_t time_delay;
@@ -78,20 +73,23 @@ uint8_t address_base=0;
 static void
 recv_broadcast(struct broadcast_conn *c, const linkaddr_t *from)
 {
-	char *received_msg;
-	char *addrcheck = "Address";
+	struct broadcast *received_msg;
 	received_msg = packetbuf_dataptr();
-	if(strcmp(received_msg, addrcheck)== 0)
-			{
-			printf("base station addr recevied: %s\n", received_msg);
+	struct broadcast br_msg;
+	if(received_msg->type == BROADCAST_TYPE_DISCOVERY)
+	{
+		if(received_msg->data != address_base)
+		{
+			address_base = received_msg->data;
+			printf("base station addr: %d\n",address_base);
 			printf("actuator: broadcast to neighbors\n");
-			//br_msg.type = BROADCAST_TYPE_DISCOVERY;
-			//br_msg.data = address_base;
-			packetbuf_copyfrom(addrcheck, 8);
+			br_msg.type = BROADCAST_TYPE_DISCOVERY;
+			br_msg.data = address_base;
+			packetbuf_copyfrom(&br_msg, sizeof(br_msg));
 			broadcast_send(&broadcast);
 			broadcast_close(&broadcast);
-			check = 1;
-			}
+		}
+	}
 }
 
 static void
@@ -121,9 +119,9 @@ PROCESS_THREAD(basestation_process, ev, data)
 
 	broadcast_open(&broadcast, 55, &broadcast_callbacks);
 	static struct etimer et, dt;
-	char* msg = "data";
-
-	while(check == 0)
+	char * msg;
+	msg = "DATA";
+	while(address_base == 0)
 	{
 		etimer_set(&et, CLOCK_SECOND * 1 + random_rand() % CLOCK_SECOND);
 		PROCESS_WAIT_UNTIL(etimer_expired(&et));
@@ -135,9 +133,10 @@ PROCESS_THREAD(basestation_process, ev, data)
   		linkaddr_t addr;
 		etimer_set(&dt, CLOCK_SECOND * 5+random_rand()%128);
 		PROCESS_WAIT_UNTIL(etimer_expired(&dt));
-		packetbuf_copyfrom(&msg, sizeof(msg));
-		addr.u8[0] = 1;
-		addr.u8[1] = 0;
+		printf("sending packet with value: %s \n", msg);
+		packetbuf_copyfrom(msg, strlen(msg)+1);
+	    addr.u8[0] = address_base;
+	    addr.u8[1] = linkaddr_node_addr.u8[1];
 		mesh_send(&mesh, &addr);
   	}
   	PROCESS_END();

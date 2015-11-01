@@ -95,13 +95,11 @@ timedout(struct mesh_conn *c)
 static void
 recv(struct mesh_conn *c, const linkaddr_t *from, uint8_t hops)
 {
-  struct mesh_message * received_message;
-
+  char * received_message;
   received_message = packetbuf_dataptr();
-  //uint8_t data = **received_message->type;
-  printf("Type == %d\n",received_message->type);
-  printf("Data received from %d.%d: %d (%d)\n",
-	 from->u8[0], from->u8[1], received_message->data, packetbuf_datalen());
+
+  printf("Basestation: Data received from %d.%d with value: %s \n",
+	 from->u8[0], from->u8[1], received_message);
 
   //packetbuf_copyfrom(received_message, sizeof(received_message));
   //mesh_send(&mesh, from);
@@ -117,14 +115,18 @@ PROCESS_THREAD(basestation_process, ev, data)
 	broadcast_open(&broadcast, 55, &broadcast_callbacks);
 
 	static struct etimer et, dt;
-	//struct broadcast br_msg;
+	struct broadcast br_msg;
 
 	etimer_set(&et, CLOCK_SECOND * 1);
 
 	PROCESS_WAIT_UNTIL(etimer_expired(&et));
 	printf("basestation: broadcast to neighbors\n");
 
-	packetbuf_copyfrom("Address",8);
+	PROCESS_WAIT_UNTIL(etimer_expired(&et));
+	printf("basestation: broadcast to neighbors\n");
+	br_msg.type = BROADCAST_TYPE_DISCOVERY;
+	br_msg.data = linkaddr_node_addr.u8[0];
+	packetbuf_copyfrom(&br_msg, sizeof(br_msg));
 	broadcast_send(&broadcast);
 
 	mesh_open(&mesh, 132, &callbacks);
